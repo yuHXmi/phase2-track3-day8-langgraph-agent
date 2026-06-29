@@ -1,48 +1,4 @@
-"""Report generation helper."""
-
-from __future__ import annotations
-
-from pathlib import Path
-
-from .metrics import MetricsReport
-
-
-def render_report(metrics: MetricsReport) -> str:
-    """Render a complete lab report from metrics data.
-
-    Generate a report that includes:
-    1. Metrics summary table (total scenarios, success rate, retries, interrupts)
-    2. Per-scenario results table
-    3. Architecture explanation (your graph design, state schema, reducers)
-    4. Failure analysis (at least two failure modes you considered)
-    5. Improvement plan
-
-    Use reports/lab_report_template.md as your guide.
-
-    Return: formatted markdown string
-    """
-    scenario_rows = "\n".join(
-        "| {scenario} | {expected} | {actual} | {success} | {retries} | {interrupts} |".format(
-            scenario=item.scenario_id,
-            expected=item.expected_route,
-            actual=item.actual_route or "",
-            success="yes" if item.success else "no",
-            retries=item.retry_count,
-            interrupts=item.interrupt_count,
-        )
-        for item in metrics.scenario_metrics
-    )
-    error_lines = []
-    for item in metrics.scenario_metrics:
-        if item.errors:
-            error_lines.append(f"- {item.scenario_id}: {'; '.join(item.errors)}")
-    errors = (
-        "\n".join(error_lines)
-        if error_lines
-        else "- No unrecovered errors in successful paths."
-    )
-
-    return f"""# Day 08 Lab Report
+# Day 08 Lab Report
 
 ## 1. Team / student
 
@@ -92,18 +48,24 @@ Summary:
 
 | Metric | Value |
 |---|---:|
-| Total scenarios | {metrics.total_scenarios} |
-| Success rate | {metrics.success_rate:.2%} |
-| Average nodes visited | {metrics.avg_nodes_visited:.2f} |
-| Total retries | {metrics.total_retries} |
-| Total interrupts/approvals | {metrics.total_interrupts} |
-| Resume success | {"yes" if metrics.resume_success else "no"} |
+| Total scenarios | 7 |
+| Success rate | 100.00% |
+| Average nodes visited | 6.43 |
+| Total retries | 3 |
+| Total interrupts/approvals | 2 |
+| Resume success | no |
 
 Per scenario:
 
 | Scenario | Expected route | Actual route | Success | Retries | Interrupts |
 |---|---|---|---:|---:|---:|
-{scenario_rows}
+| S01_simple | simple | simple | yes | 0 | 0 |
+| S02_tool | tool | tool | yes | 0 | 0 |
+| S03_missing | missing_info | missing_info | yes | 0 | 0 |
+| S04_risky | risky | risky | yes | 0 | 1 |
+| S05_error | error | error | yes | 2 | 0 |
+| S06_delete | risky | risky | yes | 0 | 1 |
+| S07_dead_letter | error | error | yes | 1 | 0 |
 
 ## 5. Failure analysis
 
@@ -117,7 +79,8 @@ rejected, the graph asks for clarification instead of executing the action.
 
 Observed retry diagnostics:
 
-{errors}
+- S05_error: Retry attempt 1 after transient failure; Retry attempt 2 after transient failure
+- S07_dead_letter: Retry attempt 1 after transient failure
 
 ## 6. Persistence / recovery evidence
 
@@ -135,11 +98,3 @@ as an extension path via `build_checkpointer("sqlite", database_url)`.
 
 With one more day, the first production hardening step would be replacing the mock tool with
 typed tool adapters and making `evaluate_node` an LLM-as-judge with explicit evidence scoring.
-"""
-
-
-def write_report(metrics: MetricsReport, output_path: str | Path) -> None:
-    """Write the rendered report to a file."""
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_report(metrics), encoding="utf-8")
