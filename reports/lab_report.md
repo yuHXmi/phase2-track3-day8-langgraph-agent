@@ -2,9 +2,9 @@
 
 ## 1. Team / student
 
-- Name:
-- Repo/commit:
-- Date:
+- Name: Ha Xuan Huy
+- Repo/commit: [yuHXmi/phase2-track3-day8-langgraph-agent](https://github.com/yuHXmi/phase2-track3-day8-langgraph-agent) @ cfa19385a7715d2bf9dd35c6b2e7360d31a4bfbc
+- Date: 29/06/2026
 
 ## 2. Architecture
 
