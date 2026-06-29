@@ -16,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from .knowledge import retrieve_knowledge
 from .state import AgentState, ApprovalDecision, Route, make_event
 
 
@@ -35,6 +36,8 @@ def _classify_without_llm(query: str) -> Classification:
     error_terms = ("timeout", "failure", "crash", "unavailable", "cannot recover", "system error")
     if any(term in text for term in risky_terms):
         return Classification(route="risky", risk_level="high")
+    if retrieve_knowledge(query):
+        return Classification(route="tool", risk_level="low")
     if any(term in text for term in tool_terms):
         return Classification(route="tool", risk_level="low")
     if any(term in text for term in missing_terms) or len(text.split()) <= 4:
@@ -70,12 +73,16 @@ def _normalize_classification(query: str, result: Classification) -> Classificat
         or text.startswith("what is")
         or text.startswith("where can i")
     )
+    if any(action in text for action in risky_actions) and not asks_for_instructions:
+        return Classification(route="risky", risk_level="high")
     if result.route == "risky" and asks_for_instructions and not any(
         action in text for action in risky_actions
     ):
         return Classification(route="simple", risk_level="low")
     if result.route in {"missing_info", "simple"} and any(term in text for term in error_terms):
         return Classification(route="error", risk_level="low")
+    if result.route in {"simple", "missing_info"} and retrieve_knowledge(query):
+        return Classification(route="tool", risk_level="low")
     return result
 
 
@@ -176,6 +183,27 @@ def tool_node(state: AgentState) -> dict:
     attempt = int(state.get("attempt", 0) or 0)
     route = state.get("route", "")
     query = state.get("query", "")
+    knowledge_hit = retrieve_knowledge(query)
+    if knowledge_hit:
+        result = (
+            f"DOC_ID={knowledge_hit.doc_id}\n"
+            f"ANSWER={knowledge_hit.answer}\n"
+            f"CONTEXT={knowledge_hit.context}"
+        )
+        return {
+            "top1_doc_id": knowledge_hit.doc_id,
+            "retrieved_context": knowledge_hit.context,
+            "retrieved_answer": knowledge_hit.answer,
+            "tool_results": [result],
+            "events": [
+                make_event(
+                    "tool",
+                    "completed",
+                    "knowledge retrieved",
+                    top1_doc_id=knowledge_hit.doc_id,
+                )
+            ],
+        }
     if route == Route.ERROR.value and attempt < 2:
         result = f"ERROR transient failure on attempt {attempt + 1}: backend timeout"
         event_type = "failed"
@@ -230,8 +258,10 @@ def answer_node(state: AgentState) -> dict:
     query = state.get("query", "")
     context = "\n".join(state.get("tool_results") or []) or "No tool results were needed."
     approval = state.get("approval")
+    retrieved_answer = state.get("retrieved_answer")
     prompt = (
         "You are a concise support agent. Answer the user using only the provided context.\n"
+        "If an ANSWER field is present in the context, preserve its numbers, names, and units.\n"
         f"User query: {query}\n"
         f"Route: {state.get('route', '')}\n"
         f"Tool/context results:\n{context}\n"
@@ -245,7 +275,7 @@ def answer_node(state: AgentState) -> dict:
         answer = _content_text(get_llm(temperature=0.2).invoke(prompt)).strip()
     except Exception as exc:
         used_llm = False
-        answer = (
+        answer = retrieved_answer or (
             f"I handled your request: {query}. "
             f"Available context: {context}. "
             "Please follow up if you need a specific account detail."
@@ -253,6 +283,8 @@ def answer_node(state: AgentState) -> dict:
         fallback_reason = exc.__class__.__name__
     else:
         fallback_reason = ""
+        if retrieved_answer:
+            answer = retrieved_answer
     return {
         "final_answer": answer,
         "events": [

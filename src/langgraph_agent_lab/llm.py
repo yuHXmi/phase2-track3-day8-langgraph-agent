@@ -59,12 +59,7 @@ def get_llm(model: str | None = None, temperature: float = 0.0) -> Any:
         except ImportError as exc:
             raise RuntimeError("Install: pip install -e '.[openai]'") from exc
         selected_model = model or os.getenv("LLM_MODEL") or "gpt-4o-mini"
-        return ChatOpenAI(
-            model_name=selected_model,
-            temperature=temperature,
-            timeout=30,
-            max_retries=1,
-        )
+        return ChatOpenAI(model_name=selected_model, temperature=temperature)
 
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
